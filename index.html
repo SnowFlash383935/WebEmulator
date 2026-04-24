@@ -2,111 +2,40 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Fleshka Cloud Console</title>
+    <title>Fleshka Vercel Console</title>
     <script src="https://unpkg.com/nostalgist"></script>
     <style>
-        body { background: #121212; color: #00ff00; font-family: monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
-        .container { border: 1px solid #00ff00; padding: 20px; box-shadow: 0 0 15px rgba(0, 255, 0, 0.2); text-align: center; }
-        button { background: #00ff00; color: #000; border: none; padding: 12px 25px; cursor: pointer; font-weight: bold; margin: 10px; font-family: monospace; }
-        button:hover { background: #00cc00; box-shadow: 0 0 10px #00ff00; }
-        .status { margin-top: 15px; font-size: 1.1em; border-top: 1px solid #333; padding-top: 10px; }
-        .acquired { color: #00ff00; text-shadow: 0 0 5px #00ff00; }
-        .missing { color: #ff0000; }
-        /* Стиль для канваса эмулятора */
-        canvas { image-rendering: pixelated; max-width: 100vw; max-height: 80vh; }
+        body { background: #0a0a0a; color: #0f0; font-family: 'Courier New', monospace; text-align: center; }
+        .btn { background: #0f0; color: #000; border: none; padding: 15px; cursor: pointer; margin: 10px; }
     </style>
 </head>
 <body>
-
-<div class="container" id="ui-console">
-    <h2>[ FLESHKA_OS_v1.1 ]</h2>
-    
-    <button onclick="requestToken()">RE-AUTH_YANDEX</button>
-    <button onclick="bootGame('SNES/games/Super Mario World (USA).sfc')">BOOT_SUPER_MARIO_WORLD</button>
-
-    <div class="status" id="statusField">
-        SYSTEM: <span class="missing">WAITING_FOR_TOKEN</span>
+    <h2>[ VERCEL_NODE_CORE_v2.0 ]</h2>
+    <div id="ui">
+        <button class="btn" onclick="location.href='/api/auth'">1. AUTH_SYSTEM</button>
+        <button class="btn" onclick="boot()">2. BOOT_ROM</button>
     </div>
-</div>
 
-<script>
-    // Твой захардкоженный Client ID
-    const CONFIG = {
-        CLIENT_ID: 'c5b8b7f05f0b4b099d389c11adda0107', // Твой CID
-        CORE: 'snes9x'
-    };
+    <script>
+        // Сохраняем refresh_token из URL если он пришел
+        const urlParams = new URLSearchParams(window.location.search);
+        const rt = urlParams.get('refresh_token');
+        if (rt) localStorage.setItem('fleshka_rt', rt);
 
-    const statusField = document.getElementById('statusField');
+        async function boot() {
+            const rt = localStorage.getItem('fleshka_rt');
+            if (!rt) return alert("AUTH_REQUIRED");
 
-    function updateStatus(msg, isError = false) {
-        statusField.innerHTML = `SYSTEM: <span class="${isError ? 'missing' : 'acquired'}">${msg}</span>`;
-    }
+            document.getElementById('ui').style.display = 'none';
 
-    function checkStatus() {
-        if (localStorage.getItem('yandex_token')) {
-            updateStatus('READY_FOR_BOOT');
-        }
-    }
-
-    function captureToken() {
-        const params = new URLSearchParams(window.location.hash.replace('#', '?'));
-        const token = params.get('access_token');
-        if (token) {
-            localStorage.setItem('yandex_token', token);
-            window.history.replaceState({}, document.title, window.location.pathname);
-            updateStatus('TOKEN_ACQUIRED');
-        }
-    }
-
-    function requestToken() {
-        const authUrl = `https://oauth.yandex.ru/authorize?response_type=token&client_id=${CONFIG.CLIENT_ID}`;
-        window.location.href = authUrl;
-    }
-
-    async function getRomDownloadUrl(path) {
-        const token = localStorage.getItem('yandex_token');
-        if (!token) throw new Error("NO_TOKEN");
-
-        const encodedPath = encodeURIComponent(path);
-        const url = `https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodedPath}`;
-
-        const response = await fetch(url, {
-            headers: { 'Authorization': `OAuth ${token}` }
-        });
-
-        if (!response.ok) throw new Error("FETCH_FAILED");
-        const data = await response.json();
-        return data.href;
-    }
-
-    async function bootGame(romPath) {
-        try {
-            updateStatus('FETCHING_LINK...');
-            const downloadUrl = await getRomDownloadUrl(romPath);
-            
-            updateStatus('LOADING_EMULATOR...');
-            
-            // Скрываем UI перед запуском
-            document.getElementById('ui-console').style.display = 'none';
+            // Тянем РОМ через наш прокси
+            const romUrl = `/api/rom?refresh_token=${rt}&path=SNES/games/Super Mario World (USA).sfc`;
 
             await Nostalgist.launch({
-                core: CONFIG.CORE,
-                rom: fetch(downloadUrl, {
-                    headers: { 'Authorization': `OAuth ${localStorage.getItem('yandex_token')}` }
-                }),
-                element: document.body.appendChild(document.createElement('canvas'))
+                core: 'snes9x',
+                rom: romUrl // Nostalgist сам сделает fetch к твоему API
             });
-
-        } catch (err) {
-            console.error(err);
-            updateStatus(`ERROR: ${err.message}`, true);
-            document.getElementById('ui-console').style.display = 'block';
         }
-    }
-
-    captureToken();
-    checkStatus();
-</script>
-
+    </script>
 </body>
 </html>
