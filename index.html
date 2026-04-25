@@ -107,14 +107,15 @@ async function bootGame(fileName) {
         }
         
         // 3. Запуск
-        await Nostalgist.launch({
+        const emulator = await Nostalgist.launch({
             core: 'snes9x',
             rom: romBlob,
             fileName: fileName,
             // Магия Nostalgist: передаем начальное состояние файловой системы
-            sram: saveData,
-            state: stateData
+            sram: saveData
         });
+        emulator.loadState(stateData);
+        
     } catch (err) {
         console.error(err);
         alert("CRITICAL_BOOT_FAILURE");
