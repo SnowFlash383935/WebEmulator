@@ -112,8 +112,8 @@ async function bootGame(fileName) {
             rom: romBlob,
             fileName: fileName,
             // Магия Nostalgist: передаем начальное состояние файловой системы
-            sram: saveData,
-            state: stateData
+            sram: saveData ? new Blob([saveData]) : null,
+            state: stateData ? new Blob([stateData]) : null
         });
         
     } catch (err) {
