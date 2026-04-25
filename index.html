@@ -27,6 +27,23 @@
     </div>
 
     <script>
+        // Using the 'pako' library for GZIP handling
+import pako from 'https://jsdelivr.net';
+
+async function convertFrzToState(fileBuffer) {
+  try {
+    // 1. Decompress the .frz file (GZIP format)
+    const decompressedData = pako.ungzip(new Uint8Array(fileBuffer));
+
+    // 2. Wrap the raw data in a new Blob for download
+    const stateFile = new Blob([decompressedData], { type: 'application/octet-stream' });
+    
+    return stateFile;
+  } catch (err) {
+    console.error("Conversion failed: Likely not a standard GZIP .frz file", err);
+  }
+}
+        
         const urlParams = new URLSearchParams(window.location.search);
         const rt = urlParams.get('refresh_token') || localStorage.getItem('fleshka_rt');
         if (rt) {
@@ -99,7 +116,7 @@ async function bootGame(fileName) {
         try {
             const stateRes = await fetch(stateUrl);
             if (stateRes.ok) {
-                stateData = await stateRes.arrayBuffer();
+                stateData = await convertFrzToState(stateRes.arrayBuffer());
                 console.log("SYSTEM: STATE_FOUND_AND_LOADED");
             }
         } catch (e) {
