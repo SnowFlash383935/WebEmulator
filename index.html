@@ -2,60 +2,88 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Fleshka Vercel Console</title>
+    <title>Fleshka Cloud Console</title>
     <script src="https://unpkg.com/nostalgist"></script>
     <style>
-        body { background: #0a0a0a; color: #0f0; font-family: 'Courier New', monospace; text-align: center; }
-        .btn { background: #0f0; color: #000; border: none; padding: 15px; cursor: pointer; margin: 10px; }
+        body { background: #050505; color: #0f0; font-family: 'Courier New', monospace; margin: 0; }
+        #ui { padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .game-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; width: 100%; max-width: 800px; margin-top: 20px; }
+        .btn { background: #0f0; color: #000; border: none; padding: 10px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; }
+        .btn:hover { background: #fff; box-shadow: 0 0 10px #0f0; }
+        .status { color: #888; font-size: 0.8em; margin-bottom: 20px; }
     </style>
 </head>
 <body>
-    <h2>[ VERCEL_NODE_CORE_v2.0 ]</h2>
     <div id="ui">
-        <button class="btn" onclick="location.href='/api/auth'">1. AUTH_SYSTEM</button>
-        <button class="btn" onclick="boot()">2. BOOT_ROM</button>
+        <h2>[ FLESHKA_OS_v2.1 ]</h2>
+        <div class="status" id="log">SYSTEM: STANDBY</div>
+        
+        <div id="controls">
+            <button class="btn" onclick="location.href='/api/auth'">1. RE_AUTH</button>
+            <button class="btn" style="margin-top:10px" onclick="loadLibrary()">2. LOAD_LIBRARY</button>
+        </div>
+
+        <div class="game-list" id="gameList"></div>
     </div>
 
     <script>
-        // Сохраняем refresh_token из URL если он пришел
         const urlParams = new URLSearchParams(window.location.search);
-        const rt = urlParams.get('refresh_token');
-        if (rt) localStorage.setItem('fleshka_rt', rt);
+        const rt = urlParams.get('refresh_token') || localStorage.getItem('fleshka_rt');
+        if (rt) {
+            localStorage.setItem('fleshka_rt', rt);
+            document.getElementById('log').innerText = "SYSTEM: READY_TO_LOAD";
+        }
 
-        async function boot() {
-    const rt = localStorage.getItem('fleshka_rt');
-    if (!rt) return alert("AUTH_REQUIRED");
+        async function loadLibrary() {
+            const token = localStorage.getItem('fleshka_rt');
+            if (!token) return alert("AUTH_REQUIRED");
 
-    document.getElementById('ui').style.display = 'none';
+            const log = document.getElementById('log');
+            log.innerText = "SYSTEM: SCANNING_CLOUD...";
 
-    // 1. Формируем путь к твоему прокси на Vercel
-    const romPath = "SNES/games/Super Mario World 2 - Yoshi's Island (USA) (Rev 1).sfc";
-    const proxyUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent(romPath)}`;
+            try {
+                const res = await fetch(`/api/list?refresh_token=${encodeURIComponent(token)}`);
+                const games = await res.json();
+                
+                const container = document.getElementById('gameList');
+                container.innerHTML = ''; // Очистка
 
-    try {
-        console.log("SYSTEM: FORCING_FETCH_FROM_VERCEL...");
-        
-        // 2. САМИ скачиваем файл как байты, чтобы Nostalgist не умничал
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error(`PROXY_ERROR: ${response.status}`);
-        
-        const romBlob = await response.blob();
-        console.log("SYSTEM: ROM_BLOB_ACQUIRED, SIZE:", romBlob.size);
+                games.forEach(game => {
+                    const b = document.createElement('button');
+                    b.className = 'btn';
+                    b.innerText = `> ${game.replace('.sfc', '').replace('.smc', '')}`;
+                    b.onclick = () => bootGame(game);
+                    container.appendChild(b);
+                });
+                
+                log.innerText = `SYSTEM: ${games.length}_GAMES_FOUND`;
+                document.getElementById('controls').style.display = 'none';
+            } catch (e) {
+                log.innerText = "SYSTEM: SCAN_FAILED";
+            }
+        }
 
-        // 3. Скармливаем Nostalgist уже готовый объект, а не ссылку
-        await Nostalgist.launch({
-            core: 'snes9x',
-            rom: romBlob, // Передаем Blob напрямую!
-            fileName: 'game.sfc' // Подсказываем расширение
-        });
+        async function bootGame(fileName) {
+            const rt = localStorage.getItem('fleshka_rt');
+            document.getElementById('ui').style.display = 'none';
 
-    } catch (err) {
-        console.error("BOOT_CRITICAL_FAILURE:", err);
-        document.getElementById('ui').style.display = 'block';
-        alert("BOOT_FAILED: CHECK_CONSOLE");
-    }
-}
+            const proxyUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
 
+            try {
+                // Прямой fetch для получения Blob (чтобы Nostalgist не ушел на RetroBrew)
+                const res = await fetch(proxyUrl);
+                const blob = await res.blob();
+
+                await Nostalgist.launch({
+                    core: 'snes9x',
+                    rom: blob,
+                    fileName: fileName
+                });
+            } catch (err) {
+                alert("BOOT_ERROR");
+                document.getElementById('ui').style.display = 'block';
+            }
+        }
     </script>
 </body>
 </html>
