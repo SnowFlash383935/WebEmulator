@@ -28,121 +28,107 @@
 
         <div class="game-list" id="gameList"></div>
     </div>
-
     <script type="module">
-        // Импортируем Pako для работы с GZIP (.frz стейты)
-        import pako from 'https://esm.sh/pako@2.1.0';
+    import pako from 'https://esm.sh/pako@2.1.0';
 
-        const log = document.getElementById('log');
+    const log = document.getElementById('log');
 
-        // Вспомогательная функция для разжатия стейтов Snes9x
-        async function convertFrzToState(fileBuffer) {
-            try {
-                log.innerText = "SYSTEM: DECOMPRESSING_STATE...";
-                const decompressedData = pako.ungzip(new Uint8Array(fileBuffer));
-                return decompressedData;
-            } catch (err) {
-                console.error("SYSTEM: GZIP_FAILED (File might not be compressed)", err);
-                return new Uint8Array(fileBuffer); // Если не GZIP, пробуем как есть
-            }
+    async function convertFrzToState(fileBuffer) {
+        try {
+            const decompressedData = pako.ungzip(new Uint8Array(fileBuffer));
+            return decompressedData;
+        } catch (err) {
+            return new Uint8Array(fileBuffer);
         }
+    }
+    
+    // --- ЛОГИКА URL И ТОКЕНОВ ---
+    const urlParams = new URLSearchParams(window.location.search);
+    let rt = urlParams.get('refresh_token') || localStorage.getItem('fleshka_rt');
+    const autoGame = urlParams.get('game'); // Берем игру из поиска
+
+    if (rt) {
+        localStorage.setItem('fleshka_rt', rt);
         
-        // Обработка токенов из URL или памяти
-        const urlParams = new URLSearchParams(window.location.search);
-        let rt = urlParams.get('refresh_token');
-        if (rt) {
-            localStorage.setItem('fleshka_rt', rt);
-            // Чистим URL для красоты
-            window.history.replaceState({}, document.title, window.location.pathname);
-        } else {
-            rt = localStorage.getItem('fleshka_rt');
+        // ОЧИСТКА URL: Оставляем игру, убираем токен
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.delete('refresh_token');
+        if (autoGame) newUrl.searchParams.set('game', autoGame);
+        window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search);
+        
+        log.innerText = "SYSTEM: READY";
+        
+        // АВТОЗАПУСК: Если в закладке была игра, стартуем её сразу
+        if (autoGame) {
+            console.log("SYSTEM: AUTOSTART_INITIATED ->", autoGame);
+            // Небольшая задержка, чтобы UI успел отрисоваться
+            setTimeout(() => window.bootGame(autoGame + '.sfc'), 500);
         }
+    }
 
-        if (rt) log.innerText = "SYSTEM: READY_TO_LOAD";
+    async function loadLibrary() {
+        if (!rt) return alert("AUTH_REQUIRED");
+        log.innerText = "SYSTEM: SCANNING...";
+        try {
+            const res = await fetch(`/api/list?refresh_token=${encodeURIComponent(rt)}`);
+            const games = await res.json();
+            const container = document.getElementById('gameList');
+            container.innerHTML = ''; 
 
-        async function loadLibrary() {
-            if (!rt) return alert("AUTH_REQUIRED: CLICK STEP 1");
-            log.innerText = "SYSTEM: SCANNING_CLOUD...";
-
-            try {
-                const res = await fetch(`/api/list?refresh_token=${encodeURIComponent(rt)}`);
-                const games = await res.json();
+            games.forEach(game => {
+                const b = document.createElement('button');
+                b.className = 'btn';
+                const displayName = game.replace('.sfc', '').replace('.smc', '');
+                b.innerText = `> ${displayName}`;
                 
-                const container = document.getElementById('gameList');
-                container.innerHTML = ''; 
+                // При клике на игру — обновляем URL (для удобства создания закладки)
+                b.onclick = () => {
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('game', displayName);
+                    window.history.pushState({}, '', newUrl);
+                    window.bootGame(game);
+                };
+                container.appendChild(b);
+            });
+            log.innerText = "SYSTEM: LIBRARY_LOADED";
+            document.getElementById('controls').style.display = 'none';
+        } catch (e) { log.innerText = "SYSTEM: ERROR"; }
+    }
 
-                games.forEach(game => {
-                    const b = document.createElement('button');
-                    b.className = 'btn';
-                    b.innerText = `> ${game.replace('.sfc', '').replace('.smc', '')}`;
-                    b.onclick = () => window.bootGame(game);
-                    container.appendChild(b);
-                });
-                
-                log.innerText = `SYSTEM: ${games.length}_GAMES_READY`;
-                document.getElementById('controls').style.display = 'none';
-            } catch (e) {
-                log.innerText = "SYSTEM: SCAN_FAILED";
-                console.error(e);
-            }
+    async function bootGame(fileName) {
+        document.getElementById('ui').style.display = 'none';
+        const baseName = fileName.replace(/\.(sfc|smc)$/, '');
+        const saveName = baseName + '.srm';
+        const stateName = baseName + '.0A.frz';
+        
+        const romUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
+        const saveUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(saveName)}`;
+        const stateUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(stateName)}`;
+
+        try {
+            const [romRes, sRes, stRes] = await Promise.all([
+                fetch(romUrl), fetch(saveUrl), fetch(stateUrl)
+            ]);
+
+            const romBlob = await romRes.blob();
+            let saveData = sRes.ok ? new Uint8Array(await sRes.arrayBuffer()) : null;
+            let stateData = stRes.ok ? await convertFrzToState(await stRes.arrayBuffer()) : null;
+
+            await Nostalgist.launch({
+                core: 'snes9x',
+                rom: romBlob,
+                fileName: fileName,
+                sram: saveData,
+                state: stateData
+            });
+        } catch (err) {
+            alert("BOOT_FAILED");
+            document.getElementById('ui').style.display = 'block';
         }
+    }
 
-        async function bootGame(fileName) {
-            log.innerText = `SYSTEM: BOOTING_${fileName.toUpperCase()}...`;
-            document.getElementById('ui').style.display = 'none';
-
-            const saveName = fileName.replace(/\.(sfc|smc)$/, '.srm');
-            const stateName = fileName.replace(/\.(sfc|smc)$/, '.0A.frz'); // Стандартный стейт Snes9x
-            
-            const romUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
-            const saveUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(saveName)}`;
-            const stateUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(stateName)}`;
-
-            try {
-                // 1. Загрузка РОМа
-                const romRes = await fetch(romUrl);
-                const romBlob = await romRes.blob();
-
-                // 2. Параллельная загрузка сейва и стейта
-                let saveData = null;
-                let stateData = null;
-
-                const [sRes, stRes] = await Promise.all([
-                    fetch(saveUrl),
-                    fetch(stateUrl)
-                ]);
-
-                if (sRes.ok) {
-                    const sBuf = await sRes.arrayBuffer();
-                    saveData = new Uint8Array(sBuf);
-                    console.log("SYSTEM: SRAM_LOADED");
-                }
-
-                if (stRes.ok) {
-                    const stBuf = await stRes.arrayBuffer();
-                    stateData = await convertFrzToState(stBuf);
-                    console.log("SYSTEM: STATE_LOADED");
-                }
-                
-                // 3. Финальный запуск ядра
-                await Nostalgist.launch({
-                    core: 'snes9x',
-                    rom: romBlob,
-                    fileName: fileName,
-                    sram: saveData,
-                    state: stateData
-                });
-                
-            } catch (err) {
-                console.error(err);
-                alert("SYSTEM_CRITICAL: BOOT_FAILED");
-                document.getElementById('ui').style.display = 'block';
-            }
-        }
-
-        // Экспорт функций в глобальный объект window для доступа из HTML
-        window.loadLibrary = loadLibrary;
-        window.bootGame = bootGame;
+    window.loadLibrary = loadLibrary;
+    window.bootGame = bootGame;
     </script>
 </body>
 </html>
