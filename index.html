@@ -112,9 +112,9 @@ async function bootGame(fileName) {
             rom: romBlob,
             fileName: fileName,
             // Магия Nostalgist: передаем начальное состояние файловой системы
-            sram: saveData
+            sram: saveData,
+            state: stateData
         });
-        emulator.loadState(stateData);
         
     } catch (err) {
         console.error(err);
