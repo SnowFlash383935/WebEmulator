@@ -70,8 +70,10 @@ async function bootGame(fileName) {
 
     // Подготавливаем имена
     const saveName = fileName.replace(/\.(sfc|smc)$/, '.srm');
+    const stateName = fileName.replace(/\.(sfc|smc)$/, '.0A.frz');
     const romUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
     const saveUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(saveName)}`;
+    const stateUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(stateName)}`;
 
     try {
         log.innerText = "SYSTEM: FETCHING_ASSETS...";
@@ -80,7 +82,7 @@ async function bootGame(fileName) {
         const romRes = await fetch(romUrl);
         const romBlob = await romRes.blob();
 
-        // 2. Пробуем скачать сейв
+        // 2.1. Пробуем скачать сейв
         let saveData = null;
         try {
             const saveRes = await fetch(saveUrl);
@@ -91,14 +93,27 @@ async function bootGame(fileName) {
         } catch (e) {
             console.log("SYSTEM: NO_SAVE_FOUND, STARTING_FRESH");
         }
-
+        
+        // 2.2. Пробуем скачать стейт
+        let stateData = null;
+        try {
+            const stateRes = await fetch(stateUrl);
+            if (stateRes.ok) {
+                stateData = await stateRes.arrayBuffer();
+                console.log("SYSTEM: STATE_FOUND_AND_LOADED");
+            }
+        } catch (e) {
+            console.log("SYSTEM: NO_STATE_FOUND, STARTING_FRESH");
+        }
+        
         // 3. Запуск
         await Nostalgist.launch({
             core: 'snes9x',
             rom: romBlob,
             fileName: fileName,
             // Магия Nostalgist: передаем начальное состояние файловой системы
-            sram: saveData
+            sram: saveData,
+            state: stateData
         });
     } catch (err) {
         console.error(err);
