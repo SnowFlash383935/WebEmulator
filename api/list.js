@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 export default async function handler(req, res) {
   const { refresh_token } = req.query;
   const path = 'SNES/games';
