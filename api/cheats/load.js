@@ -1,37 +1,46 @@
-// /api/cheats/load.js
 export default async function handler(req, res) {
     const { refresh_token, fileName } = req.query;
-    if (!refresh_token || !fileName) return res.status(400).send("MISSING_PARAMS");
+    
+    // ЛОГ ДЛЯ ТЕБЯ: Проверяем, что пришло на бэкенд
+    console.log(`FETCHING CHEATS FOR: ${fileName}`);
+
+    if (!refresh_token || !fileName) {
+        return res.status(400).json({ error: "MISSING_PARAMS" });
+    }
 
     try {
-        // 1. Качаем оригинальный файл читов (в твоем формате Snes9x EX+)
-        // Предполагаем, что путь: SNES/cheats/zelda.cht (но внутри твой формат)
+        // Кодируем путь, чтобы Super Mario World (USA).cht не ломал URL
         const cheatPath = `SNES/cheats/${fileName}`;
-        const cloudRes = await fetch(`${process.env.CLOUD_URL}/load?path=${encodeURIComponent(cheatPath)}&token=${refresh_token}`);
+        const targetUrl = `${process.env.CLOUD_URL}/load?path=${encodeURIComponent(cheatPath)}&token=${encodeURIComponent(refresh_token)}`;
         
-        if (!cloudRes.ok) return res.status(404).send("NO_CHEATS_FOUND");
+        const cloudRes = await fetch(targetUrl);
+        
+        if (!cloudRes.ok) {
+            console.error(`CLOUD_ERROR: ${cloudRes.status} for ${fileName}`);
+            return res.status(cloudRes.status).json({ error: "CLOUD_FILE_NOT_FOUND" });
+        }
         
         const rawText = await cloudRes.text();
+        if (!rawText) return res.status(200).send("cheats = 0");
 
-        // 2. Парсинг твоего формата (Snes9x EX+) в RetroArch (.cht)
         const lines = rawText.split('\n').map(l => l.trim()).filter(l => l);
         let cheats = [];
         let current = null;
 
         lines.forEach(line => {
-            if (line === 'cheat') {
+            if (line.toLowerCase() === 'cheat') {
                 if (current) cheats.push(current);
                 current = { enable: true };
             } else if (line.startsWith('name:')) {
                 current.name = line.replace('name:', '').trim();
             } else if (line.startsWith('code:')) {
-                // Убираем '=', так как RetroArch часто предпочитает слитный формат
+                // RetroArch SNES9x понимает форматы: 7E0Dbe63 или 7E0Dbe+63
+                // Убираем '=', заменяем на '+' для надежности
                 current.code = line.replace('code:', '').trim().replace('=', '+');
             }
         });
         if (current) cheats.push(current);
 
-        // 3. Сборка в формат .cht для RetroArch
         let output = [`cheats = ${cheats.length}`];
         cheats.forEach((c, i) => {
             output.push(`cheat${i}_desc = "${c.name || 'Cheat ' + i}"`);
@@ -39,11 +48,11 @@ export default async function handler(req, res) {
             output.push(`cheat${i}_enable = ${c.enable}`);
         });
 
-        res.setHeader('Content-Type', 'text/plain');
-        res.status(200).send(output.join('\n'));
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.status(200).send(output.join('\n'));
 
     } catch (e) {
-        res.status(500).send("CONVERSION_ERROR");
+        console.error("CRITICAL_CONVERSION_ERROR:", e.message);
+        return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", details: e.message });
     }
 }
-  
