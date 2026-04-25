@@ -26,7 +26,7 @@ export default async function handler(req, res) {
                 current.name = line.replace('name:', '').trim();
             } else if (line.startsWith('code:')) {
                 // Убираем '=', так как RetroArch часто предпочитает слитный формат
-                current.code = line.replace('code:', '').trim().replace('=', '');
+                current.code = line.replace('code:', '').trim().replace('=', '+');
             }
         });
         if (current) cheats.push(current);
