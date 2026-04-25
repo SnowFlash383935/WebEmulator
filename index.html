@@ -23,19 +23,39 @@
         if (rt) localStorage.setItem('fleshka_rt', rt);
 
         async function boot() {
-            const rt = localStorage.getItem('fleshka_rt');
-            if (!rt) return alert("AUTH_REQUIRED");
+    const rt = localStorage.getItem('fleshka_rt');
+    if (!rt) return alert("AUTH_REQUIRED");
 
-            document.getElementById('ui').style.display = 'none';
+    document.getElementById('ui').style.display = 'none';
 
-            // Тянем РОМ через наш прокси
-            const romUrl = `/api/rom?refresh_token=${rt}&path=SNES/games/Super Mario World (USA).sfc`;
+    // 1. Формируем путь к твоему прокси на Vercel
+    const romPath = "SNES/games/Super Mario World (USA).sfc";
+    const proxyUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent(romPath)}`;
 
-            await Nostalgist.launch({
-                core: 'snes9x',
-                rom: romUrl // Nostalgist сам сделает fetch к твоему API
-            });
-        }
+    try {
+        console.log("SYSTEM: FORCING_FETCH_FROM_VERCEL...");
+        
+        // 2. САМИ скачиваем файл как байты, чтобы Nostalgist не умничал
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`PROXY_ERROR: ${response.status}`);
+        
+        const romBlob = await response.blob();
+        console.log("SYSTEM: ROM_BLOB_ACQUIRED, SIZE:", romBlob.size);
+
+        // 3. Скармливаем Nostalgist уже готовый объект, а не ссылку
+        await Nostalgist.launch({
+            core: 'snes9x',
+            rom: romBlob, // Передаем Blob напрямую!
+            fileName: 'game.sfc' // Подсказываем расширение
+        });
+
+    } catch (err) {
+        console.error("BOOT_CRITICAL_FAILURE:", err);
+        document.getElementById('ui').style.display = 'block';
+        alert("BOOT_FAILED: CHECK_CONSOLE");
+    }
+}
+
     </script>
 </body>
 </html>
