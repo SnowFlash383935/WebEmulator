@@ -63,27 +63,51 @@
             }
         }
 
-        async function bootGame(fileName) {
-            const rt = localStorage.getItem('fleshka_rt');
-            document.getElementById('ui').style.display = 'none';
+async function bootGame(fileName) {
+    const rt = localStorage.getItem('fleshka_rt');
+    const log = document.getElementById('log');
+    document.getElementById('ui').style.display = 'none';
 
-            const proxyUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
+    // Подготавливаем имена
+    const saveName = fileName.replace(/\.(sfc|smc)$/, '.srm');
+    const romUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
+    const saveUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(saveName)}`;
 
-            try {
-                // Прямой fetch для получения Blob (чтобы Nostalgist не ушел на RetroBrew)
-                const res = await fetch(proxyUrl);
-                const blob = await res.blob();
+    try {
+        log.innerText = "SYSTEM: FETCHING_ASSETS...";
+        
+        // 1. Качаем РОМ
+        const romRes = await fetch(romUrl);
+        const romBlob = await romRes.blob();
 
-                await Nostalgist.launch({
-                    core: 'snes9x',
-                    rom: blob,
-                    fileName: fileName
-                });
-            } catch (err) {
-                alert("BOOT_ERROR");
-                document.getElementById('ui').style.display = 'block';
+        // 2. Пробуем скачать сейв
+        let saveData = null;
+        try {
+            const saveRes = await fetch(saveUrl);
+            if (saveRes.ok) {
+                saveData = await saveRes.arrayBuffer();
+                console.log("SYSTEM: SAVE_FOUND_AND_LOADED");
             }
+        } catch (e) {
+            console.log("SYSTEM: NO_SAVE_FOUND, STARTING_FRESH");
         }
+
+        // 3. Запуск
+        await Nostalgist.launch({
+            core: 'snes9x',
+            rom: romBlob,
+            fileName: fileName,
+            // Магия Nostalgist: передаем начальное состояние файловой системы
+            initialSaves: saveData ? {
+                [`${saveName}`]: new Uint8Array(saveData)
+            } : {}
+        });
+    } catch (err) {
+        console.error(err);
+        alert("CRITICAL_BOOT_FAILURE");
+        document.getElementById('ui').style.display = 'block';
+    }
+}
     </script>
 </body>
 </html>
