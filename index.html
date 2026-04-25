@@ -104,22 +104,39 @@
         const romUrl = `/api/rom?refresh_token=${encodeURIComponent(rt)}&path=${encodeURIComponent('SNES/games/' + fileName)}`;
         const saveUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(saveName)}`;
         const stateUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(stateName)}`;
+        const cheatUrl = `/api/cheats/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(fileName.replace(/\.(sfc|smc)$/, '.cht'))}`;
 
         try {
-            const [romRes, sRes, stRes] = await Promise.all([
-                fetch(romUrl), fetch(saveUrl), fetch(stateUrl)
+            const [romRes, sRes, stRes, cheatRes] = await Promise.all([
+                fetch(romUrl), fetch(saveUrl), fetch(stateUrl), fetch(cheatUrl)
             ]);
 
             const romBlob = await romRes.blob();
             let saveData = sRes.ok ? new Uint8Array(await sRes.arrayBuffer()) : null;
             let stateData = stRes.ok ? await convertFrzToState(await stRes.arrayBuffer()) : null;
+            const cheatContent = cheatRes.ok ? await cheatRes.text() : null;
 
             await Nostalgist.launch({
                 core: 'snes9x',
                 rom: romBlob,
                 fileName: fileName,
                 sram: saveData,
-                state: stateData
+                state: stateData,
+                beforeLaunch(nostalgist) {
+                    if (cheatContent) {
+                        const FS = nostalgist.getEmscriptenFS();
+                        const cheatDir = '/home/webuser/retroarch/cheats';
+                        try { FS.mkdirTree(cheatDir); } catch(e) {}
+                    
+                        // Записываем уже сконвертированный файл
+                        FS.writeFile(`${cheatDir}/${fileName}.cht`, cheatContent);
+                        console.log("SYSTEM: CHEATS_INJECTED");
+                    }
+                },
+                retroarchConfig: {
+                    cheat_database_path: '/home/webuser/retroarch/cheats',
+                    apply_cheats_after_load: true
+                }
             });
         } catch (err) {
             alert("BOOT_FAILED");
