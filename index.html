@@ -124,20 +124,28 @@
                 state: stateData,
                 beforeLaunch(nostalgist) {
                     if (cheatContent) {
-                        const FS = nostalgist.getEmscriptenFS();
-                        const cheatDir = '/home/webuser/retroarch/cheats';
-                        try { FS.mkdirTree(cheatDir); } catch(e) {}
-                    
-                        // Записываем уже сконвертированный файл
-                        FS.writeFile(`${cheatDir}/${fileName}.cht`, cheatContent);
-                        console.log("SYSTEM: CHEATS_INJECTED");
+                        try {
+                            const FS = nostalgist.getEmscriptenFS();
+                            
+                            // Nostalgist запускает игру из корневой или рабочей директории.
+                            // Пишем файл читов прямо туда же, где лежит ROM.
+                            const cheatFileName = fileName.replace(/\.(sfc|smc)$/, '.cht');
+                            
+                            FS.writeFile(`/${cheatFileName}`, cheatContent);
+                            console.log("SYSTEM: CHEATS_INJECTED");
+                        } catch (fsError) {
+                            // Ловим ошибку ФС, чтобы она НЕ ломала запуск самой игры
+                            console.error("SYSTEM: CHEAT_INJECTION_FAILED", fsError);
+                        }
                     }
                 },
                 retroarchConfig: {
-                    cheat_database_path: '/home/webuser/retroarch/cheats',
+                    // Указываем корень в качестве директории читов
+                    cheat_database_path: '/',
                     apply_cheats_after_load: true
                 }
             });
+
         } catch (err) {
             alert("BOOT_FAILED");
             document.getElementById('ui').style.display = 'block';
