@@ -105,45 +105,62 @@
         const saveUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(saveName)}`;
         const stateUrl = `/api/srm/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(stateName)}`;
         const cheatUrl = `/api/cheats/load?refresh_token=${encodeURIComponent(rt)}&fileName=${encodeURIComponent(fileName.replace(/\.(sfc|smc)$/, '.cht'))}`;
-
+    
         try {
             const [romRes, sRes, stRes, cheatRes] = await Promise.all([
                 fetch(romUrl), fetch(saveUrl), fetch(stateUrl), fetch(cheatUrl)
             ]);
-
+    
             const romBlob = await romRes.blob();
             let saveData = sRes.ok ? new Uint8Array(await sRes.arrayBuffer()) : null;
             let stateData = stRes.ok ? await convertFrzToState(await stRes.arrayBuffer()) : null;
             const cheatContent = cheatRes.ok ? await cheatRes.text() : null;
             const cheatFileName = fileName.replace(/\.(sfc|smc)$/, '.cht');
             
+            // Define paths explicitly so they map perfectly inside the Emscripten object
+            const cheatDir = '/home/web_user/retroarch/userdata/cheats';
+            const absoluteCheatPath = `${cheatDir}/${cheatFileName}`;
+    
             await Nostalgist.launch({
                 core: 'snes9x',
                 rom: romBlob,
                 fileName: fileName,
                 sram: saveData,
                 state: stateData,
+                
                 beforeLaunch(nostalgist) {
                     if (cheatContent) {
                         try {
                             const FS = nostalgist.getEmscriptenFS();
-                            // Записываем файл в корень
-                            FS.writeFile(`/${cheatFileName}`, cheatContent);
-                            console.log("SYSTEM: CHEATS_INJECTED");
+                            
+                            // Ensure the absolute directory path exists before writing
+                            try {
+                                FS.mkdirTree(cheatDir);
+                            } catch (e) {
+                                // Directory might already exist, ignore error
+                            }
+    
+                            // Write the file into the safe, structured userdata directory
+                            FS.writeFile(absoluteCheatPath, cheatContent);
+                            console.log("SYSTEM: CHEATS_INJECTED to " + absoluteCheatPath);
                         } catch (fsError) {
                             console.error("SYSTEM: CHEAT_INJECTION_FAILED", fsError);
                         }
                     }
                 },
+                
                 retroarchConfig: {
-                    // Указываем RetroArch конкретный файл читов для этой сессии
-                    cheat_file: `/${cheatFileName}`,
-                    // Форсируем применение читов сразу после старта ядра
+                    // Point directly to our newly written VFS path
+                    cheat_directory: cheatDir,
+                    cheat_file: absoluteCheatPath,
+                    
+                    // Force RetroArch to execute cheat application during boot seq
                     apply_cheats_after_load: true
                 }
             });
-
+    
         } catch (err) {
+            console.error(err);
             alert("BOOT_FAILED");
             document.getElementById('ui').style.display = 'block';
         }
