@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fleshka Cloud Console</title>
-    <script src="https://unpkg.com/nostalgist"></script>
+    <script src="emulatorjs.org"></script>
     <style>
         body { background: #050505; color: #0f0; font-family: 'Courier New', monospace; margin: 0; overflow-x: hidden; }
         #ui { padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -116,67 +116,77 @@
             let stateData = stRes.ok ? await convertFrzToState(await stRes.arrayBuffer()) : null;
             const cheatContent = cheatRes.ok ? await cheatRes.text() : null;
             const cheatFileName = fileName.replace(/\.(sfc|smc)$/, '.cht');
-            
-            // Define paths explicitly so they map perfectly inside the Emscripten object
-            const cheatDir = '/home/web_user/retroarch/userdata/cheats';
-            const absoluteCheatPath = `${cheatDir}/${cheatFileName}`;
     
-            await Nostalgist.launch({
-                core: 'snes9x',
-                rom: romBlob,
-                fileName: fileName,
-                sram: saveData,
-                state: stateData,
-                
-                beforeLaunch(nostalgist) {
-                    if (cheatContent) {
-                        try {
-                            const FS = nostalgist.getEmscriptenFS();
-                            try { FS.mkdirTree(cheatDir); } catch (e) {}
-                            FS.writeFile(absoluteCheatPath, cheatContent);
-                            console.log("SYSTEM: CHEATS_INJECTED to " + absoluteCheatPath);
-                        } catch (fsError) {
-                            console.error("SYSTEM: CHEAT_INJECTION_FAILED", fsError);
+            // Настройка глобальных переменных EmulatorJS
+            window.EJS_pathtodata = "https://cdn.emulatorjs.org/stable/data/";
+            window.EJS_player = '#game-container'; // ID вашего контейнера для плеера
+            window.EJS_core = 'snes'; // Идентификатор ядра SNES в EmulatorJS
+            window.EJS_gameName = baseName;
+            
+            // Передача бинарных данных ROM напрямую в EmulatorJS
+            window.EJS_gameUrl = URL.createObjectURL(romBlob); 
+    
+            // Загрузка сохранений и стейтов
+            if (saveData) {
+                window.EJS_sram = saveData; 
+            }
+            if (stateData) {
+                window.EJS_state = stateData;
+            }
+    
+            // Инъекция читов через хук жизненного цикла EmulatorJS
+            window.EJS_onPlay = function() {
+                if (cheatContent && window.EJS_emulator && window.EJS_emulator.FS) {
+                    try {
+                        const FS = window.EJS_emulator.FS;
+                        const cheatDir = '/home/web_user/retroarch/userdata/cheats';
+                        const absoluteCheatPath = `${cheatDir}/${cheatFileName}`;
+    
+                        // Рекурсивное создание директории в файловой системе Emscripten
+                        const parts = cheatDir.split('/').filter(p => p);
+                        let currentPath = '';
+                        for (const part of parts) {
+                            currentPath += '/' + part;
+                            try { FS.mkdir(currentPath); } catch(e) {}
                         }
-                    }
-                },
-                
-                afterLaunch(nostalgist) {
-                    if (cheatContent) {
+    
+                        // Запись файла читов
+                        FS.writeFile(absoluteCheatPath, cheatContent);
+                        console.log("SYSTEM: CHEATS_INJECTED to " + absoluteCheatPath);
+    
+                        // Принудительное выполнение команд RetroArch внутри EmulatorJS
                         setTimeout(() => {
-                            try {
-                                // Fetch the global Emscripten Module instance managed by Nostalgist
-                                const Module = nostalgist.getEmscriptenModule();
-                                
-                                // If RetroArch's command handler is exposed to the runtime main loop:
-                                if (Module._vfs_parse_cheat_file) {
-                                    // Direct pointer execution to force read the exact file path
-                                    Module.ccall('vfs_parse_cheat_file', 'number', ['string'], [absoluteCheatPath]);
-                                    console.log("SYSTEM: C_BINDING_CHEAT_PARSED");
-                                } else {
-                                    // Alternative: Using the module's core evaluation string
-                                    nostalgist.sendCommand('CHEAT_FILE_LOAD ' + absoluteCheatPath);
-                                    nostalgist.sendCommand('CHEAT_APPLY');
-                                    console.log("SYSTEM: COMMANDS_EVALUATED");
+                            if (window.EJS_emulator.ccall) {
+                                try {
+                                    window.EJS_emulator.ccall('vfs_parse_cheat_file', 'number', ['string'], [absoluteCheatPath]);
+                                    console.log("SYSTEM: EmulatorJS_CHEAT_PARSED");
+                                } catch(e) {
+                                    console.warn("Direct ccall failed, relying on RetroArch auto-load config.");
                                 }
-                            } catch (e) {
-                                console.error("SYSTEM: DIRECT_EMBED_CALL_FAILED", e);
                             }
-                        }, 2000); // 2 second delay to completely clear the Map_LoROMMap phase
+                        }, 1500);
+    
+                    } catch (fsError) {
+                        console.error("SYSTEM: CHEAT_INJECTION_FAILED", fsError);
                     }
-                },
-
-                
-                retroarchConfig: {
-                    cheat_directory: cheatDir,
-                    cheat_file: absoluteCheatPath,
-                    apply_cheats_after_load: true,
-                    
-                    // Ensure network/command backend interface is active inside Emscripten
-                    network_cmd_enable: true,
-                    stdin_cmd_enable: true
                 }
-            });
+            };
+    
+            // Передача кастомных настроек RetroArch
+            window.EJS_RetroDefs = {
+                cheat_directory: '/home/web_user/retroarch/userdata/cheats',
+                cheat_file: `/home/web_user/retroarch/userdata/cheats/${cheatFileName}`,
+                apply_cheats_after_load: 'true',
+                stdin_cmd_enable: 'true'
+            };
+    
+            // Запуск загрузчика EmulatorJS (должен быть предварительно подключен loader.js)
+            if (typeof createEmulatorJS === 'function') {
+                new createEmulatorJS();
+            } else {
+                throw new Error("EmulatorJS loader not found");
+            }
+    
         } catch (err) {
             console.error(err);
             alert("BOOT_FAILED");
