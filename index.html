@@ -115,7 +115,8 @@
             let saveData = sRes.ok ? new Uint8Array(await sRes.arrayBuffer()) : null;
             let stateData = stRes.ok ? await convertFrzToState(await stRes.arrayBuffer()) : null;
             const cheatContent = cheatRes.ok ? await cheatRes.text() : null;
-
+            const cheatFileName = fileName.replace(/\.(sfc|smc)$/, '.cht');
+            
             await Nostalgist.launch({
                 core: 'snes9x',
                 rom: romBlob,
@@ -126,22 +127,18 @@
                     if (cheatContent) {
                         try {
                             const FS = nostalgist.getEmscriptenFS();
-                            
-                            // Nostalgist запускает игру из корневой или рабочей директории.
-                            // Пишем файл читов прямо туда же, где лежит ROM.
-                            const cheatFileName = fileName.replace(/\.(sfc|smc)$/, '.cht');
-                            
+                            // Записываем файл в корень
                             FS.writeFile(`/${cheatFileName}`, cheatContent);
                             console.log("SYSTEM: CHEATS_INJECTED");
                         } catch (fsError) {
-                            // Ловим ошибку ФС, чтобы она НЕ ломала запуск самой игры
                             console.error("SYSTEM: CHEAT_INJECTION_FAILED", fsError);
                         }
                     }
                 },
                 retroarchConfig: {
-                    // Указываем корень в качестве директории читов
-                    cheat_database_path: '/',
+                    // Указываем RetroArch конкретный файл читов для этой сессии
+                    cheat_file: `/${cheatFileName}`,
+                    // Форсируем применение читов сразу после старта ядра
                     apply_cheats_after_load: true
                 }
             });
