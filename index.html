@@ -132,15 +132,7 @@
                     if (cheatContent) {
                         try {
                             const FS = nostalgist.getEmscriptenFS();
-                            
-                            // Ensure the absolute directory path exists before writing
-                            try {
-                                FS.mkdirTree(cheatDir);
-                            } catch (e) {
-                                // Directory might already exist, ignore error
-                            }
-    
-                            // Write the file into the safe, structured userdata directory
+                            try { FS.mkdirTree(cheatDir); } catch (e) {}
                             FS.writeFile(absoluteCheatPath, cheatContent);
                             console.log("SYSTEM: CHEATS_INJECTED to " + absoluteCheatPath);
                         } catch (fsError) {
@@ -149,16 +141,35 @@
                     }
                 },
                 
+                // ADD THIS BLOCK BELOW beforeLaunch
+                afterLaunch(nostalgist) {
+                    if (cheatContent) {
+                        // Wait 1.5 seconds for Snes9x core to fully map linear memory
+                        setTimeout(() => {
+                            try {
+                                // Force RetroArch to load and parse the specific VFS cheat path
+                                nostalgist.sendCommand('CHEAT_FILE_LOAD ' + absoluteCheatPath);
+                                
+                                // Force backend core memory update loop
+                                nostalgist.sendCommand('CHEAT_APPLY');
+                                console.log("SYSTEM: RETROARCH_COMMANDS_SENT");
+                            } catch (cmdError) {
+                                console.error("SYSTEM: RETRO_CMD_FAILED", cmdError);
+                            }
+                        }, 1500); 
+                    }
+                },
+                
                 retroarchConfig: {
-                    // Point directly to our newly written VFS path
                     cheat_directory: cheatDir,
                     cheat_file: absoluteCheatPath,
+                    apply_cheats_after_load: true,
                     
-                    // Force RetroArch to execute cheat application during boot seq
-                    apply_cheats_after_load: true
+                    // Ensure network/command backend interface is active inside Emscripten
+                    network_cmd_enable: true,
+                    stdin_cmd_enable: true
                 }
             });
-    
         } catch (err) {
             console.error(err);
             alert("BOOT_FAILED");
