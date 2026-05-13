@@ -141,24 +141,31 @@
                     }
                 },
                 
-                // ADD THIS BLOCK BELOW beforeLaunch
                 afterLaunch(nostalgist) {
                     if (cheatContent) {
-                        // Wait 1.5 seconds for Snes9x core to fully map linear memory
                         setTimeout(() => {
                             try {
-                                // Force RetroArch to load and parse the specific VFS cheat path
-                                nostalgist.sendCommand('CHEAT_FILE_LOAD ' + absoluteCheatPath);
+                                // Fetch the global Emscripten Module instance managed by Nostalgist
+                                const Module = nostalgist.getEmscriptenModule();
                                 
-                                // Force backend core memory update loop
-                                nostalgist.sendCommand('CHEAT_APPLY');
-                                console.log("SYSTEM: RETROARCH_COMMANDS_SENT");
-                            } catch (cmdError) {
-                                console.error("SYSTEM: RETRO_CMD_FAILED", cmdError);
+                                // If RetroArch's command handler is exposed to the runtime main loop:
+                                if (Module._vfs_parse_cheat_file) {
+                                    // Direct pointer execution to force read the exact file path
+                                    Module.ccall('vfs_parse_cheat_file', 'number', ['string'], [absoluteCheatPath]);
+                                    console.log("SYSTEM: C_BINDING_CHEAT_PARSED");
+                                } else {
+                                    // Alternative: Using the module's core evaluation string
+                                    nostalgist.sendCommand('CHEAT_FILE_LOAD ' + absoluteCheatPath);
+                                    nostalgist.sendCommand('CHEAT_APPLY');
+                                    console.log("SYSTEM: COMMANDS_EVALUATED");
+                                }
+                            } catch (e) {
+                                console.error("SYSTEM: DIRECT_EMBED_CALL_FAILED", e);
                             }
-                        }, 1500); 
+                        }, 2000); // 2 second delay to completely clear the Map_LoROMMap phase
                     }
-                },
+                }
+
                 
                 retroarchConfig: {
                     cheat_directory: cheatDir,
