@@ -53,7 +53,7 @@ export default async function handler(req, res) {
                 current.name = line.replace('name:', '').trim();
             } else if (line.startsWith('code:')) {
                 // Преобразуем формат: ADDR=VAL -> ADDR+VAL для RetroArch
-                current.code = line.replace('code:', '').trim().replace('=', ':').toUpperCase();
+                current.code = line.replace('code:', '').trim().replace('=', '').toUpperCase();
             }
         });
         if (current) cheats.push(current);
