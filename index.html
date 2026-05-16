@@ -115,7 +115,7 @@
             let saveData = sRes.ok ? new Uint8Array(await sRes.arrayBuffer()) : null;
             let stateData = stRes.ok ? await convertFrzToState(await stRes.arrayBuffer()) : null;
             const cheatContent = cheatRes.ok ? await cheatRes.text() : null;
-
+            console.log(cheatContent);
             await Nostalgist.launch({
                 core: 'snes9x',
                 rom: romBlob,
